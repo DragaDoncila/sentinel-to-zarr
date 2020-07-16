@@ -1,3 +1,4 @@
+from typing import Dict
 import zarr
 from skimage.transform import pyramid_gaussian
 import numpy as np
@@ -16,13 +17,14 @@ import os
 import skimage
 from collections import defaultdict
 
+
 MAX_LAYER = 5
 DOWNSCALE = 2
 CHUNKSIZE = 1024
-RGB_BANDS =  (('SRE_B2', '#0000FF'), ('SRE_B3', '00FF00'), ('SRE_B4', 'FF0000'))
+RGB_BANDS =  (('SRE_B2', '#0000FF'), ('SRE_B3', '#00FF00'), ('SRE_B4', '#FF0000'))
 NEAR_IR_BANDS = (('SRE_B8', '#FF0000'), ('SRE_B4', '#00FF00'), ('SRE_B3', '#0000FF'))
 
-@dask.delayed
+
 def ziptiff2array(zip_filename, path_to_tiff):
     """Return a NumPy array from a TiffFile within a zip file.
 
@@ -49,7 +51,41 @@ def ziptiff2array(zip_filename, path_to_tiff):
         image = tiff_f.pages[0].asarray()
     return image
 
-def generate_zattrs(tile, bands, contrast_limits, max_layer=5, band_colormap_tup=RGB_BANDS):
+
+def generate_zattrs(
+            tile,
+            bands,
+            *,
+            contrast_limits=None,
+            max_layer=5,
+            band_colormap_tup=RGB_BANDS,
+    ) -> Dict:
+    """Return a zattrs dictionary matching the OME-zarr metadata spec [1]_.
+
+    Parameters
+    ----------
+    tile : str
+        The input tile name, e.g. "55HBU"
+    bands : list of str
+        The bands being written to the zarr.
+    contrast_limits : dict[str -> (int, int)], optional
+        Dictionary mapping bands to contrast limit values.
+    max_layer : int
+        The highest layer in the multiscale pyramid. This corresponds to the
+        ``skimage.transform.pyramid_gaussian`` parameter ``max_layer``. It does
+        not count the base layer as a layer, so actually one more layer than
+        this number are written to disk.
+    band_colormap_tup : tuple[(band, hexcolor)]
+
+    Returns
+    -------
+    zattr_dict: dict
+        Dictionary of OME-zarr metadata.
+        
+    References
+    ----------
+    .. [1] https://github.com/ome/omero-ms-zarr/blob/master/spec.md
+    """
     band_colormap = defaultdict(lambda: 'FFFFFF', dict(band_colormap_tup))
     zattr_dict = {}
     zattr_dict['multiscales'] = []
@@ -62,7 +98,6 @@ def generate_zattrs(tile, bands, contrast_limits, max_layer=5, band_colormap_tup
 
     zattr_dict['omero'] = {'channels' : []}
     for band in bands:
-        lower_contrast_limit, upper_contrast_limit = contrast_limits[band]
         color = band_colormap[band]
         zattr_dict['omero']['channels'].append({
             'active' : band in dict(band_colormap_tup),
@@ -71,13 +106,15 @@ def generate_zattrs(tile, bands, contrast_limits, max_layer=5, band_colormap_tup
             'family': 'linear',
             'inverted': 'false',
             'label': band,
-            'window': {
-                'end': upper_contrast_limit,
-                'max': np.iinfo(np.int16).max,
-                'min': np.iinfo(np.int16).min,
-                'start': lower_contrast_limit
-            }
         })
+        if contrast_limits is not None and band in contrast_limits:
+            lower_contrast_limit, upper_contrast_limit = contrast_limits[band]
+            zattr_dict['omero']['channels'][-1]['window'] = {
+                    'end': upper_contrast_limit,
+                    'max': np.iinfo(np.int16).max,
+                    'min': np.iinfo(np.int16).min,
+                    'start': lower_contrast_limit,
+            }
     zattr_dict['omero']['id'] = str(0)
     zattr_dict['omero']['name'] = tile
     zattr_dict['omero']['rdefs'] = {
@@ -88,50 +125,80 @@ def generate_zattrs(tile, bands, contrast_limits, max_layer=5, band_colormap_tup
     zattr_dict['omero']['version'] = '0.1'
     return zattr_dict
 
-def write_zattrs(contrast_limits, bands, outdir):
-    # write zattr file with contrast limits and remaining attributes
-    with open(outdir + "/.zattrs", "w") as outfile:
-        json.dump(zattr_dict, outfile)
 
+def write_zattrs(zattr_dict, outdir, *, exist_ok=False):
+    """Write a given zattr_dict to the corresponding directory/file.
+
+    Parameters
+    ----------
+    zattr_dict : dict
+        The zarr attributes dictionary.
+    outdir : str
+        The output zarr directory to which to write.
+    exist_ok : bool, optional
+        If True, any existing files will be overwritten. If False and the
+        file exists, raise a FileExistsError. Note that this check only
+        applies to .zattrs and not to .zgroup.
+    """
+    outfile = os.path.join(outdir, '.zattrs')
+    if not exist_ok and os.path.exists(outfile):
+        raise FileExistsError(
+            f'The file {outfile} exists and `exists_ok` is set to False.'
+        )
+    with open(outfile, "w") as out:
+        json.dump(zattr_dict, out)
+    
     with open(outdir + "/.zgroup", "w") as outfile:
-        json.dump({"zarr_format": MAX_LAYER+1}, outfile)
+        json.dump({"zarr_format": 2}, outfile)
 
 
-# path to individual tile
-DATA_ROOT_PATH = '/media/draga/My Passport/pepsL2A_zip_img/55HBU/'
-OUTDIR = "/media/draga/My Passport/Zarr/55HBU_Raw"
+def band_at_timepoint_to_zarr(
+        timepoint_fn,
+        timepoint_number,
+        band,
+        band_number,
+        *,
+        out_zarrs=None,
+        min_level_shape=(1024, 1024),
+        num_timepoints=None,
+        num_bands=None,
+):
+    basepath = os.path.splitext(os.path.basename(timepoint_fn))[0]
+    path = basepath + '/' + basepath + '_' + band + '.tif'
+    image = ziptiff2array(timepoint_fn, path)
+    shape = image.shape
+    dtype = image.dtype
+    max_layer = np.log2(
+        np.max(np.array(shape) / np.array(min_level_shape))
+    ).astype(int)
+    
+    im_pyramid = list(pyramid_gaussian(image, max_layer=max_layer, downscale=DOWNSCALE))
+    if isinstance(out_zarrs, str):
+        fout_zarr = out_zarrs
+        out_zarrs = []
+        Path(fout_zarr).mkdir(parents=True, exist_ok=True)
+        compressor = Blosc(cname='zstd', clevel=9, shuffle=Blosc.SHUFFLE, blocksize=0)
+        for i in range(len(im_pyramid)):
+            r, c = im_pyramid[i].shape
+            out_zarrs.append(zarr.open(
+                    os.path.join(fout_zarr, str(i)), 
+                    mode='a', 
+                    shape=(num_timepoints, num_bands, 1, r, c), 
+                    dtype=np.int16,
+                    chunks=(1, 1, 1, *min_level_shape), 
+                    compressor=compressor,
+                )
+            )
+    # for each resolution:
+    for pyramid_level, downscaled in \
+            tqdm(enumerate(im_pyramid), title=f'pyramid levels for {band}'):
+        # convert back to int16
+        downscaled = skimage.img_as_int(downscaled)
+        # store into appropriate zarr
+        out_zarrs[pyramid_level][timepoint_number, band_number, 0, :, :] = downscaled
+    
+    return out_zarrs
 
-# each zip file contains many bands, ie channels
-BANDS_20M = [
-    "FRE_B11",
-    "FRE_B12",
-    "FRE_B5",
-    "FRE_B6",
-    "FRE_B7",
-    "FRE_B8A",
-    "SRE_B11",
-    "SRE_B12",
-    "SRE_B5",
-    "SRE_B6",
-    "SRE_B7",
-    "SRE_B8A",
-    ]
-
-BANDS_10M = [
-    "FRE_B2",
-    "FRE_B3",
-    "FRE_B4",
-    "FRE_B8",
-    "SRE_B2", # surface reflectance, blue
-    "SRE_B3", # surface reflectance, green
-    "SRE_B4", # surface reflectance, red
-    "SRE_B8",
-]
-
-IM_SHAPE_20M = (5490, 5490)
-IM_SHAPE_10M = (10980, 10980)
-
-CONTRAST_LIMITS=[-1000, 19_000]
 
 # get all timestamps for this tile, and sort them
 all_zips = sorted(glob(DATA_ROOT_PATH + '/*.zip'))
@@ -139,38 +206,7 @@ timestamps = [os.path.basename(fn).split('_')[1] for fn in all_zips]
 num_timepoints = len(timestamps)
 
 # open zarr of shape (timepoints, 1, bands, res, res) for 10980 and 5490 separately for each pyramid resolution
-compressor = Blosc(cname='zstd', clevel=9, shuffle=Blosc.SHUFFLE, blocksize=0)
-Path(OUTDIR).mkdir(parents=True, exist_ok=True)
 
-zarrs10 = []
-zarrs20 = []
-for i in range(MAX_LAYER+1):
-    # compute downscaled shape for both resolutions
-    new_res10 = tuple(np.ceil(np.array(IM_SHAPE_10M) / (DOWNSCALE ** i)).astype(int)) if i != 0 else IM_SHAPE_10M
-    new_res20 = tuple(np.ceil(np.array(IM_SHAPE_20M) / (DOWNSCALE ** i)).astype(int)) if i != 0 else IM_SHAPE_20M
-    
-    outname10 = OUTDIR + f"/10m_Res.zarr/{i}"
-    outname20 = OUTDIR + f"/20m_Res.zarr/{i}"
-
-    z_arr10 = zarr.open(
-            outname10, 
-            mode='w', 
-            shape=(num_timepoints, len(BANDS_10M), 1, new_res10[0], new_res10[1]), 
-            dtype=np.int16,
-            chunks=(1, 1, 1, CHUNKSIZE, CHUNKSIZE), 
-            compressor=compressor
-            )
-    zarrs10.append(z_arr10)
-
-    z_arr20 = zarr.open(
-        outname20, 
-        mode='w', 
-        shape=(num_timepoints, len(BANDS_20M), 1, new_res20[0], new_res20[1]), 
-        dtype=np.int16,
-        chunks=(1, 1, 1, CHUNKSIZE, CHUNKSIZE), 
-        compressor=compressor
-        )
-    zarrs20.append(z_arr20)
 
 # array of size 2**16 for frequency counts per band
 # combined frequency count for B2, B3, B4 for SRE and FRE
@@ -190,23 +226,7 @@ for i, timestamp in tqdm(enumerate(timestamps)):
     # 10m bands
     for j, band in tqdm(enumerate(BANDS_10M)):
         # get pyramid
-        basepath = os.path.splitext(os.path.basename(current_zip_fn))[0]
-        path = basepath + '/' + basepath + '_' + band + '.tif'
-        image = da.from_delayed(
-            ziptiff2array(current_zip_fn, path), shape=IM_SHAPE_10M, dtype=np.int16
-        )
-        # # add to frequency counts
-        # ravelled = image.ravel()
-        # contrast_histogram_10m[band] = da.add(contrast_histogram_10m[band], np.bincount(ravelled, minlength=2**16))
-        
-        im_pyramid = list(pyramid_gaussian(image, max_layer=MAX_LAYER, downscale=DOWNSCALE))
-        # for each resolution:
-        for k, downscaled in enumerate(im_pyramid):
-            print(f"Res: {k}, Band: {j}, Timestamp: {i}")
-            # convert back to int16
-            downscaled = skimage.img_as_int(downscaled)
-            # store into appropriate zarr
-            zarrs10[k][i, j, 0, :, :] = downscaled
+
 
     # 20m bands
     for j, band in tqdm(enumerate(BANDS_20M)):
