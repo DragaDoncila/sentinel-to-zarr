@@ -1,4 +1,6 @@
 import argparse
+from glob import glob
+import os
 
 # each zip file contains many bands, ie channels
 BANDS_20M = [
@@ -50,5 +52,9 @@ parser.add_argument(
 
 def main():
     args = parser.parse_args()
+    # get all timestamps for this tile, and sort them
+    all_zips = sorted(glob(args.root_path + '/*.zip'))
+    timestamps = [os.path.basename(fn).split('_')[1] for fn in all_zips]
+    num_timepoints = len(timestamps)
     # do the things
     pass

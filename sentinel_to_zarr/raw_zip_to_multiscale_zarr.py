@@ -200,10 +200,7 @@ def band_at_timepoint_to_zarr(
     return out_zarrs
 
 
-# get all timestamps for this tile, and sort them
-all_zips = sorted(glob(DATA_ROOT_PATH + '/*.zip'))
-timestamps = [os.path.basename(fn).split('_')[1] for fn in all_zips]
-num_timepoints = len(timestamps)
+
 
 # open zarr of shape (timepoints, 1, bands, res, res) for 10980 and 5490 separately for each pyramid resolution
 
