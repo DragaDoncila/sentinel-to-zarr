@@ -176,7 +176,6 @@ def band_at_timepoint_to_zarr(
     if isinstance(out_zarrs, str):
         fout_zarr = out_zarrs
         out_zarrs = []
-        Path(fout_zarr).mkdir(parents=True, exist_ok=True)
         compressor = Blosc(cname='zstd', clevel=9, shuffle=Blosc.SHUFFLE, blocksize=0)
         for i in range(len(im_pyramid)):
             r, c = im_pyramid[i].shape
@@ -191,7 +190,7 @@ def band_at_timepoint_to_zarr(
             )
     # for each resolution:
     for pyramid_level, downscaled in \
-            tqdm(enumerate(im_pyramid), title=f'pyramid levels for {band}'):
+            tqdm(enumerate(im_pyramid), title=f'Level {pyramid_level}'):
         # convert back to int16
         downscaled = skimage.img_as_int(downscaled)
         # store into appropriate zarr
@@ -199,55 +198,6 @@ def band_at_timepoint_to_zarr(
     
     return out_zarrs
 
-
-
-
-# open zarr of shape (timepoints, 1, bands, res, res) for 10980 and 5490 separately for each pyramid resolution
-
-
-# array of size 2**16 for frequency counts per band
-# combined frequency count for B2, B3, B4 for SRE and FRE
-# contrast_histogram_10m = dict(zip(
-#     BANDS_10M,
-#     [np.zeros(2**16, dtype=np.int) for i in range(len(BANDS_10M))]
-# ))
-
-# contrast_histogram_20m = dict(zip(
-#     BANDS_20M,
-#     [np.zeros(2**16, dtype=np.int) for i in range(len(BANDS_20M))]
-# ))
-
-# for each timepoint, band:
-for i, timestamp in tqdm(enumerate(timestamps)):
-    current_zip_fn = all_zips[i]
-    # 10m bands
-    for j, band in tqdm(enumerate(BANDS_10M)):
-        # get pyramid
-
-
-    # 20m bands
-    for j, band in tqdm(enumerate(BANDS_20M)):
-        # add to frequency counts
-
-        # get pyramid
-        basepath = os.path.splitext(os.path.basename(current_zip_fn))[0]
-        path = basepath + '/' + basepath + '_' + band + '.tif'
-        image = da.from_delayed(
-            ziptiff2array(current_zip_fn, path), shape=IM_SHAPE_20M, dtype=np.int16
-        )
-        # # add to frequency counts
-        # ravelled = image.ravel()
-        # contrast_histogram_20m[band] = da.add(contrast_histogram_20m[band], np.bincount(ravelled, minlength=2**16))
-        
-        im_pyramid = list(pyramid_gaussian(image, max_layer=MAX_LAYER, downscale=DOWNSCALE))
-        # for each resolution:
-        for k, downscaled in enumerate(im_pyramid):
-            print(f"Res: {k}, Band: {j}, Timestamp: {i}")
-            # convert back to int16
-            downscaled = skimage.img_as_int(downscaled)
-            # store into appropriate zarr
-            zarrs20[k][i, j, 0, :, :] = downscaled
-    
 # #compute contrast limits
 # contrast_limits_10m = {}
 # for band in BANDS_10M:
@@ -266,6 +216,3 @@ for i, timestamp in tqdm(enumerate(timestamps)):
 
 #     contrast_limits_20m[band] = (lower_contrast_limit, upper_contrast_limit)
 
-# write zattrs
-write_zattrs(CONTRAST_LIMITS, BANDS_10M, OUTDIR + "/10m_Res.zarr/")
-write_zattrs(CONTRAST_LIMITS, BANDS_20M, OUTDIR + "/20m_Res.zarr/")
