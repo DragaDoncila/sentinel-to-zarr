@@ -2,7 +2,9 @@ import argparse
 from glob import glob
 import os
 from tqdm import tqdm
-from sentinel_to_zarr.raw_zip_to_multiscale_zarr import *
+from pathlib import Path
+import numpy as np
+from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs
 
 # each zip file contains many bands, ie channels
 BANDS_20M = [
@@ -69,7 +71,7 @@ parser.add_argument(
 parser.add_argument(
     '--true-color',
     help='Use true color. Incompatible with --nir.',
-    type=bool,
+    action='store_true',
     default=False,
 )
 
@@ -132,7 +134,7 @@ def main():
 
         # TODO: write zattrs and zgroup for each resolution
         zattrs = generate_zattrs(
-            tile="TILE_NAME",
+            tile=all_zips[0],  # TODO: grab the actual tile name from filename
             bands=bands,
             contrast_limits=contrast_limits,
             max_layer=num_resolution_levels,

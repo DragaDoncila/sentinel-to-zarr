@@ -115,7 +115,7 @@ setup(
 
     # When your source code is in a subdirectory under the project root, e.g.
     # `src/`, it is necessary to specify the `package_dir` argument.
-    package_dir={'': 'sentinel_to_zarr'},  # Optional
+    # package_dir={'': 'sentinel_to_zarr'},  # Optional
 
     # You can just specify package directories manually here if your project is
     # simple. Or you can use find_packages().
@@ -126,7 +126,7 @@ setup(
     #
     #   py_modules=["my_module"],
     #
-    packages=find_packages(where='sentinel_to_zarr'),  # Required
+    packages=find_packages(where='.'),  # Required
 
     # Specify which Python versions you support. In contrast to the
     # 'Programming Language' classifiers above, 'pip install' will check this
@@ -142,13 +142,12 @@ setup(
     # https://packaging.python.org/en/latest/requirements.html
     install_requires=[
         'zarr',
-        'skimage',
+        'scikit-image',
         'numpy',
         'numcodecs',
         'tqdm',
         'dask',
         'tifffile',
-        'zipfile',
     ],  # Optional
 
     # List additional groups of dependencies here (e.g. development

@@ -73,8 +73,7 @@ def generate_zattrs(
     max_layer : int
         The highest layer in the multiscale pyramid.
     band_colormap_tup : tuple[(band, hexcolor)]
-        List of band to colormap pairs containing all bands to be initially
-        displayed.
+        List of band to colormap pairs containing all bands to be initiallydisplayed.
     Returns
     -------
     zattr_dict: dict
@@ -177,6 +176,7 @@ def band_at_timepoint_to_zarr(
         compressor = Blosc(cname='zstd', clevel=9, shuffle=Blosc.SHUFFLE, blocksize=0)
         for i in range(len(im_pyramid)):
             r, c = im_pyramid[i].shape
+            out_zarrs.append(zarr.open(
                     os.path.join(fout_zarr, str(i)), 
                     mode='a', 
                     shape=(num_timepoints, num_bands, 1, r, c), 
@@ -185,6 +185,7 @@ def band_at_timepoint_to_zarr(
                     compressor=compressor,
                 )
             )
+            
     # for each resolution:
     for pyramid_level, downscaled in \
             tqdm(enumerate(im_pyramid), title=f'Level {pyramid_level}'):
@@ -194,4 +195,3 @@ def band_at_timepoint_to_zarr(
         out_zarrs[pyramid_level][timepoint_number, band_number, 0, :, :] = downscaled
     
     return out_zarrs
-
