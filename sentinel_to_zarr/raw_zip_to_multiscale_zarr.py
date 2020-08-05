@@ -71,12 +71,10 @@ def generate_zattrs(
     contrast_limits : dict[str -> (int, int)], optional
         Dictionary mapping bands to contrast limit values.
     max_layer : int
-        The highest layer in the multiscale pyramid. This corresponds to the
-        ``skimage.transform.pyramid_gaussian`` parameter ``max_layer``. It does
-        not count the base layer as a layer, so actually one more layer than
-        this number are written to disk.
+        The highest layer in the multiscale pyramid.
     band_colormap_tup : tuple[(band, hexcolor)]
-
+        List of band to colormap pairs containing all bands to be initially
+        displayed.
     Returns
     -------
     zattr_dict: dict
@@ -90,7 +88,7 @@ def generate_zattrs(
     zattr_dict = {}
     zattr_dict['multiscales'] = []
     zattr_dict['multiscales'].append({'datasets' : []})
-    for i in range(max_layer + 1):
+    for i in range(max_layer):
         zattr_dict['multiscales'][0]['datasets'].append(
             {'path': f'{i}'}
         )
@@ -179,7 +177,6 @@ def band_at_timepoint_to_zarr(
         compressor = Blosc(cname='zstd', clevel=9, shuffle=Blosc.SHUFFLE, blocksize=0)
         for i in range(len(im_pyramid)):
             r, c = im_pyramid[i].shape
-            out_zarrs.append(zarr.open(
                     os.path.join(fout_zarr, str(i)), 
                     mode='a', 
                     shape=(num_timepoints, num_bands, 1, r, c), 
@@ -197,22 +194,4 @@ def band_at_timepoint_to_zarr(
         out_zarrs[pyramid_level][timepoint_number, band_number, 0, :, :] = downscaled
     
     return out_zarrs
-
-# #compute contrast limits
-# contrast_limits_10m = {}
-# for band in BANDS_10M:
-#     frequencies = contrast_histogram_10m[band].compute()
-#     # get 95th quantile of frequency counts
-#     lower_contrast_limit = np.flatnonzero(np.cumsum(frequencies) / np.sum(frequencies) > 0.025)[0]
-#     upper_contrast_limit = np.flatnonzero(np.cumsum(frequencies) / np.sum(frequencies) > 0.975)[0]
-
-#     contrast_limits_10m[band] = (lower_contrast_limit, upper_contrast_limit)
-
-# contrast_limits_20m = {}
-# for band in BANDS_20M:
-#     # get 95th quantile of frequency counts
-#     lower_contrast_limit = np.flatnonzero(np.cumsum(contrast_histogram_20m[band]) / np.sum(contrast_histogram_20m[band]) > 0.025)[0]
-#     upper_contrast_limit = np.flatnonzero(np.cumsum(contrast_histogram_20m[band]) / np.sum(contrast_histogram_20m[band]) > 0.975)[0]
-
-#     contrast_limits_20m[band] = (lower_contrast_limit, upper_contrast_limit)
 

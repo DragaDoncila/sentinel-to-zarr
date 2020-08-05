@@ -31,6 +31,16 @@ BANDS_10M = [
     "SRE_B8",
 ]
 
+BAND_RESOLUTIONS = {
+    '10m': BANDS_10M,
+    '20m': BANDS_20M,
+}
+
+BAND2RES = {
+    **{band: 10 for band in BANDS_10M},
+    **{band: 20 for band in BANDS_20M},
+}
+
 
 CONTRAST_LIMITS=[-1000, 19_000]
 
@@ -50,6 +60,25 @@ parser.add_argument(
     type=lambda string: string.split(','),
     default=BANDS_10M + BANDS_20M,
 )
+parser.add_argument(
+    '--nir',
+    help='Whether to use NIR false color.',
+    dest='true_color',
+    action='store_false',
+)
+parser.add_argument(
+    '--true-color',
+    help='Use true color. Incompatible with --nir.',
+    type=bool,
+    default=False,
+)
+
+# indexed by the value of args.true_color
+BANDTUPS = {
+    True: [('FRE_B4', 'FF0000'), ('FRE_B3', '00FF00'), ('FRE_B2', '0000FF')],
+    False: [('FRE_B8', 'FF0000'), ('FRE_B4', '00FF00'), ('FRE_B3', '0000FF')],
+}
+
 
 
 def main():
@@ -60,37 +89,53 @@ def main():
     num_timepoints = len(timestamps)
     
     #TODO: split bands into their different resolutions, infer tile name
-    band_types = [BANDS_10M, BANDS_20M]
+    band_types = BAND_RESOLUTIONS
 
-    for i, band_type in enumerate(band_types):
+    contrast_histogram = dict(zip(
+        args.bands,
+        [np.zeros(2**16, dtype=np.int) for i in range(len(band_types))]
+    ))
+
+    for resolution in band_types:
         # make outdirectory
         Path(args.out_path).mkdir(parents=True, exist_ok=True)
         # make zarrs for each resolution
-        out_zarrs = os.path.join(args.out_path, f"{i}.zarr")
+        out_path = os.path.join(args.out_path, f"{resolution}.zarr")
+        out_zarrs = out_path
         Path(out_zarrs).mkdir(out_zarrs, exist_ok=True)
 
-        bands = band_types[i]
+        bands = band_types[resolution]
         # process each timepoint and band
-        for j, timestamp in tqdm(enumerate(timestamps), title=f"Timestamp: {i}"):
+        for j, timestamp in tqdm(enumerate(timestamps), title=f"Timestamp: {j}"):
             current_zip_fn = all_zips[j]
             for k, band in tqdm(enumerate(bands), title=f"Band: {band}"):
+
                 out_zarrs = band_at_timepoint_to_zarr(
                     current_zip_fn,
-                    j.
+                    j,
                     band,
                     k,
-                    out_zarrs = out_zarrs,
-                    num_timepoints = num_timepoints,
+                    out_zarrs=out_zarrs,
+                    num_timepoints=num_timepoints,
                     num_bands=len(bands)
                 )
-        # TODO: compute contrast limits
+                ravelled = out_zarrs[-1].ravel()
+                contrast_histogram[band] = np.add(contrast_histogram[band], np.bincount(ravelled, minlength=2**16))
+            num_resolution_levels = len(out_zarrs)
+
+        contrast_limits = {}
+        for band in bands:
+            frequencies = contrast_histogram[band]
+            lower_contrast_limit = np.flatnonzero(np.cumsum(frequencies) / np.sum(frequencies) > 0.025)[0]
+            upper_contrast_limit = np.flatnonzero(np.cumsum(frequencies) / np.sum(frequencies) > 0.975)[0]
+            contrast_limits[band] = (lower_contrast_limit, upper_contrast_limit)
 
         # TODO: write zattrs and zgroup for each resolution
         zattrs = generate_zattrs(
             tile="TILE_NAME",
             bands=bands,
-            contrast_limits=CONTRAST_LIMITS,
-            max_layer="?",
-            band_colormap_tup="?"
+            contrast_limits=contrast_limits,
+            max_layer=num_resolution_levels,
+            band_colormap_tup=BANDTUPS[args.true_color],
         )
-    pass
+        write_zattrs(zattrs, out_path)
