@@ -107,10 +107,10 @@ def generate_zattrs(
         if contrast_limits is not None and band in contrast_limits:
             lower_contrast_limit, upper_contrast_limit = contrast_limits[band]
             zattr_dict['omero']['channels'][-1]['window'] = {
-                    'end': upper_contrast_limit,
+                    'end': int(upper_contrast_limit),
                     'max': np.iinfo(np.int16).max,
                     'min': np.iinfo(np.int16).min,
-                    'start': lower_contrast_limit,
+                    'start': int(lower_contrast_limit),
             }
     zattr_dict['omero']['id'] = str(0)
     zattr_dict['omero']['name'] = tile
@@ -168,8 +168,8 @@ def band_at_timepoint_to_zarr(
     max_layer = np.log2(
         np.max(np.array(shape) / np.array(min_level_shape))
     ).astype(int)
-    
-    im_pyramid = list(pyramid_gaussian(image, max_layer=max_layer, downscale=DOWNSCALE))
+    pyramid = pyramid_gaussian(image, max_layer=max_layer, downscale=DOWNSCALE)
+    im_pyramid = list(pyramid)
     if isinstance(out_zarrs, str):
         fout_zarr = out_zarrs
         out_zarrs = []
@@ -185,10 +185,9 @@ def band_at_timepoint_to_zarr(
                     compressor=compressor,
                 )
             )
-            
+
     # for each resolution:
-    for pyramid_level, downscaled in \
-            tqdm(enumerate(im_pyramid), title=f'Level {pyramid_level}'):
+    for pyramid_level, downscaled in enumerate(im_pyramid):
         # convert back to int16
         downscaled = skimage.img_as_int(downscaled)
         # store into appropriate zarr
