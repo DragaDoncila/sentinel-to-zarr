@@ -94,7 +94,7 @@ def main(argv=sys.argv):
     #TODO: split bands into their different resolutions, infer tile name
     bands_10m = sorted(set(BANDS_10M) & set(args.bands))
     bands_20m = sorted(set(BANDS_20M) & set(args.bands))
-    
+
     band_types = {}
     if len(bands_10m) > 0:
         band_types['10m'] = bands_10m
@@ -150,8 +150,6 @@ def main(argv=sys.argv):
                 np.cumsum(frequencies) / np.sum(frequencies) > 0.975
             )[0]
             contrast_limits[band] = (lower_contrast_limit - 2**15, upper_contrast_limit - 2**15)
-            print("Unshifted limits: ", lower_contrast_limit, upper_contrast_limit)
-            print(band, contrast_limits[band])
 
         zattrs = generate_zattrs(
             tile=all_zips[0],  # TODO: grab the actual tile name from filename
