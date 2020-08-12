@@ -14,3 +14,7 @@ __pycache__/
 
 # IDE
 .vscode
+
+# Misc
+test_ims.py
+*.txt
