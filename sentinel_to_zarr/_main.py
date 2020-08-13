@@ -4,7 +4,7 @@ import os
 from tqdm import tqdm
 from pathlib import Path
 import numpy as np
-from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs
+from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs, infer_tile_name
 import sys
 
 # each zip file contains many bands, ie channels
@@ -82,16 +82,19 @@ BANDTUPS = {
     False: [('FRE_B8', 'FF0000'), ('FRE_B4', '00FF00'), ('FRE_B3', '0000FF')],
 }
 
+PATTERN = rf"(.*/)([0-9][0-9][A-Z][A-Z][A-Z])(.*)"
 
 
 def main(argv=sys.argv):
     args = parser.parse_args(argv)
+    # infer the tilename being processed
+    tile_name = infer_tile_name(args.root_path, PATTERN)
+    
     # get all timestamps for this tile, and sort them
     all_zips = sorted(glob(args.root_path + '/*.zip'))
     timestamps = [os.path.basename(fn).split('_')[1] for fn in all_zips]
     num_timepoints = len(timestamps)
     
-    #TODO: split bands into their different resolutions, infer tile name
     bands_10m = sorted(set(BANDS_10M) & set(args.bands))
     bands_20m = sorted(set(BANDS_20M) & set(args.bands))
 
@@ -152,7 +155,7 @@ def main(argv=sys.argv):
             contrast_limits[band] = (lower_contrast_limit - 2**15, upper_contrast_limit - 2**15)
 
         zattrs = generate_zattrs(
-            tile=all_zips[0],  # TODO: grab the actual tile name from filename
+            tile=tile_name,
             bands=bands,
             contrast_limits=contrast_limits,
             max_layer=num_resolution_levels,

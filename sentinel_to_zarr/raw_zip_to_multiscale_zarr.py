@@ -16,6 +16,7 @@ from glob import glob
 import os
 import skimage
 from collections import defaultdict
+import re
 
 
 MAX_LAYER = 5
@@ -147,6 +148,28 @@ def write_zattrs(zattr_dict, outdir, *, exist_ok=False):
     
     with open(outdir + "/.zgroup", "w") as outfile:
         json.dump({"zarr_format": 2}, outfile)
+
+def infer_tile_name(in_path, pattern):
+    """Use the input path to infer the tile name currently being processed. If the tile name cannot be inferred,
+    returns the name of the directory being processed
+
+    Parameters
+    ----------
+    in_path : str
+        Input path for processing
+    pattern : str
+        Regex pattern to determine tile name
+    Returns
+    -------
+    tile_name: str
+        Name of the tile being processed
+    """
+    match = re.match(pattern, in_path)
+    if match:
+        tile_name = match.groups()[1]
+    else:
+        tile_name = os.path.dirname(in_path)
+    return tile_name
 
 
 def band_at_timepoint_to_zarr(
