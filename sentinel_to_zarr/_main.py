@@ -72,8 +72,11 @@ parser.add_argument(
 parser.add_argument(
     '--true-color',
     help='Use true color. Incompatible with --nir.',
-    default=False,
-    action='store_true',
+    dest='true_color',
+    action = "store_true"
+)
+parser.set_defaults(
+    true_color = False
 )
 
 # indexed by the value of args.true_color
@@ -118,7 +121,7 @@ def main(argv=sys.argv):
         os.makedirs(out_zarrs, exist_ok=True)
 
         bands = band_types[resolution]
-        # bands = sorted(set(band_types[resolution]) & set(args.bands))
+
         # process each timepoint and band
         for j, timestamp in tqdm(enumerate(timestamps), desc=f"{resolution}"):
             current_zip_fn = all_zips[j]
