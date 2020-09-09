@@ -24,6 +24,7 @@ DOWNSCALE = 2
 CHUNKSIZE = 1024
 RGB_BANDS =  (('SRE_B2', '#0000FF'), ('SRE_B3', '#00FF00'), ('SRE_B4', '#FF0000'))
 NEAR_IR_BANDS = (('SRE_B8', '#FF0000'), ('SRE_B4', '#00FF00'), ('SRE_B3', '#0000FF'))
+EDGE_MASK = 'EDG_R'
 
 
 def ziptiff2array(zip_filename, path_to_tiff):
@@ -217,3 +218,30 @@ def band_at_timepoint_to_zarr(
         out_zarrs[pyramid_level][timepoint_number, band_number, 0, :, :] = downscaled
     
     return out_zarrs
+
+
+def get_masked_histogram(im, zip_fn, i):
+    basepath = os.path.splitext(os.path.basename(zip_fn))[0]
+    mask_fn = basepath + '/MASKS/' + basepath + '_' + EDGE_MASK + str(i + 1) + '.tif'
+    mask = ziptiff2array(zip_fn, mask_fn)
+    
+    # invert to have 0-discard 1-keep
+    mask_boolean = np.invert(mask.astype("bool"))
+
+    ravelled = im[mask_boolean]
+    masked_histogram = np.histogram(
+            ravelled, bins=np.arange(-2**15 - 0.5, 2**15)
+        )[0]
+    return masked_histogram
+
+def get_contrast_limits(band_frequencies):
+    frequencies = sum(band_frequencies)
+    lower_limit = np.flatnonzero(
+        np.cumsum(frequencies) / np.sum(frequencies) > 0.025
+    )[0]
+    upper_limit = np.flatnonzero(
+        np.cumsum(frequencies) / np.sum(frequencies) > 0.975
+    )[0]
+    lower_limit_rescaled = lower_limit - 2**15
+    upper_limit_rescaled = upper_limit - 2**15
+    return lower_limit_rescaled, upper_limit_rescaled

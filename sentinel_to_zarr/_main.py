@@ -4,7 +4,7 @@ import os
 from tqdm import tqdm
 from pathlib import Path
 import numpy as np
-from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs, infer_tile_name, ziptiff2array
+from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs, infer_tile_name, ziptiff2array, get_masked_histogram, get_contrast_limits
 import sys
 from skimage.transform import resize
 
@@ -65,7 +65,6 @@ MASKS_20M = [
 
 MASKS = [MASKS_10M, MASKS_20M]
 
-EDGE_MASK = 'EDG_R'
 
 
 parser = argparse.ArgumentParser()
@@ -145,7 +144,8 @@ def main(argv=sys.argv):
         for j, timestamp in tqdm(enumerate(timestamps), desc=f"{resolution}"):
             current_zip_fn = all_zips[j]
             for k, band in tqdm(enumerate(bands), desc=f"{timestamp}"):
-
+                
+                # get downsampled zarr cube for this timepoint and band
                 out_zarrs = band_at_timepoint_to_zarr(
                     current_zip_fn,
                     j,
@@ -156,40 +156,22 @@ def main(argv=sys.argv):
                     num_bands=len(bands)
                 )
 
-                im = np.array(out_zarrs[0])[j, k, 0, :, :]
-                basepath = os.path.splitext(os.path.basename(current_zip_fn))[0]
-                mask_fn = basepath + '/MASKS/' + basepath + '_' + EDGE_MASK + str(i + 1) + '.tif'
-                mask = ziptiff2array(current_zip_fn, mask_fn)
-                
-                # downsample the mask using nearest neighbour
-                mask_downsampled = resize(
-                    mask,
-                    im.shape,
-                    order=0 #nearest neighbour
-                )
-                # invert to have 0-discard 1-keep
-                mask_boolean = np.invert(mask.astype("bool"))
-
-                ravelled = im[mask_boolean]
+                # get frequencies of each pixel for this band and timepoint, masking partial tiles
+                band_at_timepoint_histogram = get_masked_histogram(
+                    np.array(out_zarrs[0])[j, k, 0, :, :],
+                    current_zip_fn,
+                    i
+                )        
                 contrast_histogram[band].append(
-                    np.histogram(
-                        ravelled, bins=np.arange(-2**15 - 0.5, 2**15)
-                    )[0]
+                    band_at_timepoint_histogram
                 )
-            num_resolution_levels = len(out_zarrs)
 
-        #TODO: write out all masks
+            num_resolution_levels = len(out_zarrs)
 
         contrast_limits = {}
         for band in bands:
-            frequencies = sum(contrast_histogram[band])
-            lower_contrast_limit = np.flatnonzero(
-                np.cumsum(frequencies) / np.sum(frequencies) > 0.025
-            )[0]
-            upper_contrast_limit = np.flatnonzero(
-                np.cumsum(frequencies) / np.sum(frequencies) > 0.975
-            )[0]
-            contrast_limits[band] = (lower_contrast_limit - 2**15, upper_contrast_limit - 2**15)
+            lower, upper = get_contrast_limits(contrast_histogram[band])
+            contrast_limits[band] = (lower, upper)
 
         zattrs = generate_zattrs(
             tile=tile_name,
