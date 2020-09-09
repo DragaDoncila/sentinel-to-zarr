@@ -4,9 +4,8 @@ import os
 from tqdm import tqdm
 from pathlib import Path
 import numpy as np
-from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs, infer_tile_name, ziptiff2array, get_masked_histogram, get_contrast_limits
 import sys
-from skimage.transform import resize
+from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs, infer_tile_name, get_masked_histogram, get_contrast_limits
 
 # each zip file contains many bands, ie channels
 BANDS_20M = [
