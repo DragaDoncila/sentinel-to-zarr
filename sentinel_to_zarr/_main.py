@@ -129,9 +129,8 @@ def main(argv=sys.argv):
 
     contrast_histogram = dict(zip(
         args.bands,
-        [np.zeros(2**16, dtype=np.int) for i in range(len(args.bands))]
+        [[] for i in range(len(args.bands))]
     ))
-
     for i, resolution in enumerate(band_types):
         # make outdirectory
         Path(args.out_path).mkdir(parents=True, exist_ok=True)
@@ -157,8 +156,7 @@ def main(argv=sys.argv):
                     num_bands=len(bands)
                 )
 
-                im = np.array(out_zarrs[-1])[:, k, :, :, :]
-                count = np.count_nonzero(im == -1e4)
+                im = np.array(out_zarrs[0])[j, k, 0, :, :]
                 basepath = os.path.splitext(os.path.basename(current_zip_fn))[0]
                 mask_fn = basepath + '/MASKS/' + basepath + '_' + EDGE_MASK + str(i + 1) + '.tif'
                 mask = ziptiff2array(current_zip_fn, mask_fn)
@@ -166,18 +164,14 @@ def main(argv=sys.argv):
                 # downsample the mask using nearest neighbour
                 mask_downsampled = resize(
                     mask,
-                    (im.shape[2], im.shape[3]),
+                    im.shape,
                     order=0 #nearest neighbour
                 )
                 # invert to have 0-discard 1-keep
-                mask_boolean = np.invert(mask_downsampled.astype("bool"))
+                mask_boolean = np.invert(mask.astype("bool"))
 
-                im = im[:, :, mask_boolean]
-                count2 = np.count_nonzero(im == -1e4)
-                # shouldn't we only be grabbing the current band of im?
-                ravelled = np.array(im).reshape(-1)
-                contrast_histogram[band] = np.add(
-                    contrast_histogram[band],
+                ravelled = im[mask_boolean]
+                contrast_histogram[band].append(
                     np.histogram(
                         ravelled, bins=np.arange(-2**15 - 0.5, 2**15)
                     )[0]
@@ -188,7 +182,7 @@ def main(argv=sys.argv):
 
         contrast_limits = {}
         for band in bands:
-            frequencies = contrast_histogram[band]
+            frequencies = sum(contrast_histogram[band])
             lower_contrast_limit = np.flatnonzero(
                 np.cumsum(frequencies) / np.sum(frequencies) > 0.025
             )[0]
