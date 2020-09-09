@@ -4,8 +4,9 @@ import os
 from tqdm import tqdm
 from pathlib import Path
 import numpy as np
-from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs, infer_tile_name
+from .raw_zip_to_multiscale_zarr import band_at_timepoint_to_zarr, generate_zattrs, write_zattrs, infer_tile_name, ziptiff2array
 import sys
+from skimage.transform import resize
 
 # each zip file contains many bands, ie channels
 BANDS_20M = [
@@ -44,8 +45,27 @@ BAND2RES = {
     **{band: 20 for band in BANDS_20M},
 }
 
-
 CONTRAST_LIMITS=[-1000, 19_000]
+
+MASKS_10M = [
+    'CLM_R1',
+    'EDG_R1',
+    'IAB_R1',
+    'MG2_R1',
+    'SAT_R1',
+]
+
+MASKS_20M = [
+    'CLM_R2',
+    'EDG_R2',
+    'IAB_R2',
+    'MG2_R2',
+    'SAT_R2'
+]
+
+MASKS = [MASKS_10M, MASKS_20M]
+
+EDGE_MASK = 'EDG_R'
 
 
 parser = argparse.ArgumentParser()
@@ -109,10 +129,9 @@ def main(argv=sys.argv):
 
     contrast_histogram = dict(zip(
         args.bands,
-        [np.zeros(2**16, dtype=np.int) for i in range(len(args.bands))]
+        [[] for i in range(len(args.bands))]
     ))
-
-    for resolution in band_types:
+    for i, resolution in enumerate(band_types):
         # make outdirectory
         Path(args.out_path).mkdir(parents=True, exist_ok=True)
         # make zarrs for each resolution
@@ -136,19 +155,34 @@ def main(argv=sys.argv):
                     num_timepoints=num_timepoints,
                     num_bands=len(bands)
                 )
-                #TODO: mask images before computing histogram
-                ravelled = np.array(out_zarrs[-1]).reshape(-1)
-                contrast_histogram[band] = np.add(
-                    contrast_histogram[band],
+
+                im = np.array(out_zarrs[0])[j, k, 0, :, :]
+                basepath = os.path.splitext(os.path.basename(current_zip_fn))[0]
+                mask_fn = basepath + '/MASKS/' + basepath + '_' + EDGE_MASK + str(i + 1) + '.tif'
+                mask = ziptiff2array(current_zip_fn, mask_fn)
+                
+                # downsample the mask using nearest neighbour
+                mask_downsampled = resize(
+                    mask,
+                    im.shape,
+                    order=0 #nearest neighbour
+                )
+                # invert to have 0-discard 1-keep
+                mask_boolean = np.invert(mask.astype("bool"))
+
+                ravelled = im[mask_boolean]
+                contrast_histogram[band].append(
                     np.histogram(
                         ravelled, bins=np.arange(-2**15 - 0.5, 2**15)
                     )[0]
                 )
             num_resolution_levels = len(out_zarrs)
 
+        #TODO: write out all masks
+
         contrast_limits = {}
         for band in bands:
-            frequencies = contrast_histogram[band]
+            frequencies = sum(contrast_histogram[band])
             lower_contrast_limit = np.flatnonzero(
                 np.cumsum(frequencies) / np.sum(frequencies) > 0.025
             )[0]

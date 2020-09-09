@@ -148,6 +148,7 @@ setup(
         'tqdm',
         'dask',
         'tifffile',
+        'numba'
     ],  # Optional
 
     # List additional groups of dependencies here (e.g. development
