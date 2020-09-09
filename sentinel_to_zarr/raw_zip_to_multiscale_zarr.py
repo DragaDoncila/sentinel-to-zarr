@@ -184,6 +184,35 @@ def band_at_timepoint_to_zarr(
         num_timepoints=None,
         num_bands=None,
 ):
+    """Takes the input timepoint filename and band information and writes the data
+    in this image to the appropriate indices in out_zarrs base on the downscale
+    If out_zarrs is a string, this is the first iteration, so the appropriate directories are 
+    instantiated.
+
+    Parameters
+    ----------
+    timepoint_fn : string
+        path to zip file containing bands of current timepoint
+    timepoint_number : int
+        number of current timepoint in sequence being processed
+    band : string
+        name of band currently being processed
+    band_number : int
+        number of current band in sequence being processed
+    out_zarrs : string or list, optional
+        string path to where zarrs will be stored if first iteration, otherwise list of partially filled pyramid levels, by default None
+    min_level_shape : tuple of ints, optional
+        shape of smallest desired downscaled level, by default (1024, 1024)
+    num_timepoints : int, optional
+        total number of timepoints that will be processed, by default None
+    num_bands : int, optional
+        total number of bands that will be processed, by default None
+
+    Returns
+    -------
+    list
+        partially (or fully) populated list of numpy arrays where each element is one pyramid level
+    """
     basepath = os.path.splitext(os.path.basename(timepoint_fn))[0]
     path = basepath + '/' + basepath + '_' + band + '.tif'
     image = ziptiff2array(timepoint_fn, path)
@@ -221,6 +250,23 @@ def band_at_timepoint_to_zarr(
 
 
 def get_masked_histogram(im, zip_fn, i):
+    """Compute histogram of frequencies of each pixel value in the given image, masked to exclude blank areas 
+    of partially captured tiles
+
+    Parameters
+    ----------
+    im : np.ndarray
+        uint16 image to mask and compute frequencies for
+    zip_fn : string
+        filename of the parent zip directory containing the image and its masks
+    i : int
+        index of current resolution being processed
+
+    Returns
+    -------
+    np.ndarray
+        histogram of pixel value frequencies for the masked image
+    """
     basepath = os.path.splitext(os.path.basename(zip_fn))[0]
     mask_fn = basepath + '/MASKS/' + basepath + '_' + EDGE_MASK + str(i + 1) + '.tif'
     mask = ziptiff2array(zip_fn, mask_fn)
@@ -235,6 +281,19 @@ def get_masked_histogram(im, zip_fn, i):
     return masked_histogram
 
 def get_contrast_limits(band_frequencies):
+    """Compute contrast limits of the given band based on the frequencies of
+    pixel values given. Returns the middle 95th percentile.
+
+    Parameters
+    ----------
+    band_frequencies : list of np.ndarray
+        list of pixel value counts for each timepoint processed for this band
+
+    Returns
+    -------
+    tuple (int, int)
+        lower and upper contrast limits for this histogram based on middle 95th percentile
+    """
     frequencies = sum(band_frequencies)
     lower_limit = np.flatnonzero(
         np.cumsum(frequencies) / np.sum(frequencies) > 0.025
